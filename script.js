@@ -179,10 +179,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Fungsi untuk menambahkan nomor ke database GitHub
     async function addNumberToDatabase() {
         const nomor = document.getElementById('phoneNumber').value.trim();
-        const githubToken = document.getElementById('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').value.trim();
-        const repoOwner = document.getElementById('nanastfx').value.trim();
-        const repoName = document.getElementById('db').value.trim();
-        const filePath = document.getElementById('db.json').value.trim();
+        const githubToken = document.getElementById('githubToken').value.trim();
+        const repoOwner = document.getElementById('repoOwner').value.trim();
+        const repoName = document.getElementById('repoName').value.trim();
+        const filePath = document.getElementById('filePath').value.trim();
         
         if (!nomor) {
             showDbMessage('Nomor WhatsApp harus diisi', 'error');
@@ -204,16 +204,23 @@ document.addEventListener('DOMContentLoaded', function() {
         
         try {
             // Mengambil data saat ini dari GitHub
-            const response = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/main/${filePath}`);
+            const response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`, {
+                headers: {
+                    'Authorization': `token ${githubToken}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
             
             if (!response.ok) {
-                throw new Error('Gagal mengambil data dari GitHub');
+                throw new Error('Gagal mengambil data dari GitHub. Pastikan token dan informasi repo benar.');
             }
             
-            const numberData = await response.json();
+            const fileData = await response.json();
+            const currentContent = atob(fileData.content.replace(/\s/g, ''));
+            const numberData = JSON.parse(currentContent);
             
             if (!numberData || !numberData.number || !Array.isArray(numberData.number)) {
-                throw new Error('Format database tidak valid');
+                throw new Error('Format database tidak valid. Pastikan file berisi objek dengan properti "number" yang merupakan array.');
             }
             
             // Cek jika nomor sudah ada di database
@@ -225,45 +232,36 @@ document.addEventListener('DOMContentLoaded', function() {
             // Tambahkan nomor ke array
             numberData.number.push(nomor);
             
-            // Konversi ke base64
+            // Konversi ke base64 (menggunakan encodeURIComponent untuk menghindari masalah encoding)
             const updatedData = JSON.stringify(numberData, null, 2);
             const base64Content = btoa(unescape(encodeURIComponent(updatedData)));
-            
-            // Dapatkan SHA dari file saat ini
-            const shaResponse = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`);
-            
-            if (!shaResponse.ok) {
-                throw new Error('Gagal mengambil informasi file dari GitHub');
-            }
-            
-            const shaData = await shaResponse.json();
-            const currentSHA = shaData.sha;
             
             // Update file di GitHub
             const updateResponse = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`, {
                 method: 'PUT',
                 headers: {
-                    'Authorization': `Bearer ${githubToken}`,
+                    'Authorization': `token ${githubToken}`,
+                    'Accept': 'application/vnd.github.v3+json',
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
                     message: `Menambahkan ${nomor} ke dalam database`,
                     content: base64Content,
-                    sha: currentSHA,
+                    sha: fileData.sha,
                 }),
             });
             
             const updateResult = await updateResponse.json();
             
-            if (updateResponse.status === 200) {
-                showDbMessage(`Berhasil menambahkan ${nomor} ke database GitHub`, 'success');
+            if (updateResponse.ok) {
+                showDbMessage(`Berhasil menambahkan ${nomor} ke database GitHub ✅`, 'success');
                 document.getElementById('phoneNumber').value = '';
             } else {
                 throw new Error(updateResult.message || 'Gagal mengupdate file di GitHub');
             }
         } catch (error) {
             console.error('Error:', error);
-            showDbMessage(`Error: ${error.message}`, 'error');
+            showDbMessage(`❌ Error: ${error.message}`, 'error');
         }
     }
 });
